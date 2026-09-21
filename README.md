@@ -1,6 +1,6 @@
 # Victor Ivanov
 
-Backend-leaning full-stack engineer in Sterling, VA (DMV). Active DoD Secret clearance. Open to on-site and hybrid roles across the DC / Maryland / Virginia area.
+Backend-leaning full-stack engineer in Sterling, VA (DMV). DoD Secret clearance eligibility, DCSA-adjudicated 2026. Open to on-site and hybrid roles across the DC / Maryland / Virginia area.
 
 **Now:** Senior Backend Engineer at Paradigm Testing, leading architecture and production delivery for multi-tenant certification SaaS (Java 21, Spring Boot 3, React, PostgreSQL, AWS).
 
