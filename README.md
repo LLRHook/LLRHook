@@ -26,4 +26,4 @@ i build stuff. sometimes it works. [victorivanov.engineer](https://victorivanov.
   <img alt="AI coding token usage, last 30 days" src="assets/usage-light.svg">
 </picture>
 
-<sub>Refresh: `python scripts/usage_card.py`</sub>
+<sub>Exported daily from my machine, rendered by GitHub Actions.</sub>

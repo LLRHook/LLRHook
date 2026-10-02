@@ -1,13 +1,16 @@
 #!/usr/bin/env python3
-"""Render T3 Code's local usage cache as GitHub profile SVG cards."""
+"""Export local usage logs and render GitHub profile SVG cards."""
 
 import argparse
+import hashlib
 import json
 import math
+import os
 from datetime import date, datetime, time, timedelta
 from pathlib import Path
 from typing import NamedTuple
 from xml.sax.saxutils import escape
+from zoneinfo import ZoneInfo
 
 
 class Record(NamedTuple):
@@ -25,21 +28,78 @@ class Record(NamedTuple):
         return self.input + self.cache_read + self.cache_write + self.output
 
 
-def load_records(cache_path: Path, since_ms: int, until_ms: int) -> list[Record]:
-    with cache_path.open(encoding="utf-8") as stream:
-        cache = json.load(stream)
-    if cache.get("version") != 4:
-        raise SystemExit(f"unsupported T3 usage cache version: {cache.get('version')}")
+def parse_claude(root: Path, since_ms: int) -> list[Record]:
+    records: dict[str, Record] = {}
+    root = root.expanduser().resolve()
+    if os.name == "nt":
+        root = Path("\\\\?\\" + str(root))
+    for path in sorted(root.rglob("*.jsonl")):
+        if path.stat().st_mtime * 1000 < since_ms:
+            continue
+        with path.open(encoding="utf-8", errors="replace") as stream:
+            for line in stream:
+                try:
+                    event = json.loads(line)
+                    message = event["message"]
+                    usage = message["usage"]
+                    model = message["model"]
+                    if not usage or not model or model == "<synthetic>":
+                        continue
+                    ts_ms = int(datetime.fromisoformat(event["timestamp"].replace("Z", "+00:00")).timestamp() * 1000)
+                    key = f'{message["id"]}:{event.get("requestId", "")}'
+                    records[key] = Record(
+                        ts_ms, "claude", model, event["sessionId"],
+                        int(usage.get("input_tokens", 0)),
+                        int(usage.get("cache_read_input_tokens", 0)),
+                        int(usage.get("cache_creation_input_tokens", 0)),
+                        int(usage.get("output_tokens", 0)),
+                    )
+                except (ValueError, TypeError, KeyError, AttributeError):
+                    continue
+    return [rec for rec in records.values() if rec.ts_ms >= since_ms]
+
+
+def parse_codex(root: Path, since_ms: int) -> list[Record]:
     records = []
-    for entry in cache["files"].values():
-        for row in entry["r"]:
-            if not since_ms <= row[0] < until_ms:
-                continue
-            model = cache["models"][row[1]]
-            if model == "<synthetic>":
-                continue
-            records.append(Record(row[0], entry["p"], model,
-                                  cache["sessions"][row[2]], *row[3:7]))
+    root = root.expanduser().resolve()
+    if os.name == "nt":
+        root = Path("\\\\?\\" + str(root))
+    for path in sorted(root.rglob("*.jsonl")):
+        if path.stat().st_mtime * 1000 < since_ms:
+            continue
+        session = ""
+        model = None
+        previous_total = None
+        with path.open(encoding="utf-8", errors="replace") as stream:
+            for line in stream:
+                try:
+                    event = json.loads(line)
+                    payload = event["payload"]
+                    if event["type"] == "session_meta":
+                        session = session or payload["id"]  # forks append the parent's meta
+                    elif event["type"] == "turn_context":
+                        model = payload.get("model")
+                    elif event["type"] == "event_msg" and payload.get("type") == "token_count":
+                        info = payload.get("info")
+                        if info is None:
+                            continue
+                        total = info["total_token_usage"]["total_tokens"]
+                        duplicate = total == previous_total
+                        previous_total = total
+                        if duplicate or not model:
+                            continue
+                        usage = info["last_token_usage"]
+                        cached = int(usage.get("cached_input_tokens", 0))
+                        write = int(usage.get("cache_write_input_tokens", 0))
+                        ts_ms = int(datetime.fromisoformat(event["timestamp"].replace("Z", "+00:00")).timestamp() * 1000)
+                        if ts_ms >= since_ms:
+                            records.append(Record(
+                                ts_ms, "codex", model, session,
+                                max(0, int(usage.get("input_tokens", 0)) - cached - write),
+                                cached, write, int(usage.get("output_tokens", 0)),
+                            ))
+                except (ValueError, TypeError, KeyError, AttributeError):
+                    continue
     return records
 
 
@@ -58,32 +118,32 @@ def record_cost(rec: Record, rates: dict) -> float:
     )
 
 
-def summarize(records: list[Record], rates: dict, start: date, days: int) -> dict:
+def summarize(rows: list[list], start: date, days: int) -> dict:
+    rows = [row for row in rows if start <= date.fromisoformat(row[0]) < start + timedelta(days=days)]
     providers: dict[str, dict] = {}
     models: dict[tuple[str, str], dict] = {}
     daily: dict[str, list[int]] = {}
-    total = sum(rec.tokens for rec in records)
+    total = sum(sum(row[4:8]) for row in rows)
     names = {"claude": "Claude Code", "codex": "Codex"}
-    for rec in records:
-        cost = record_cost(rec, rates)
-        provider = providers.setdefault(rec.provider, {
-            "name": names.get(rec.provider, rec.provider.title()),
-            "key": rec.provider, "tokens": 0, "sessions": set(),
+    for row in rows:
+        day, provider_key, model_name, session = row[:4]
+        tokens, cost = sum(row[4:8]), row[8]
+        provider = providers.setdefault(provider_key, {
+            "name": names.get(provider_key, provider_key.title()),
+            "key": provider_key, "tokens": 0, "sessions": set(),
             "cost": 0.0, "share": 0.0,
         })
-        provider["tokens"] += rec.tokens
-        provider["sessions"].add(rec.session)
+        provider["tokens"] += tokens
+        provider["sessions"].add(session)
         provider["cost"] += cost
-        model = models.setdefault((rec.provider, rec.model), {
-            "name": rec.model, "provider": rec.provider,
+        model = models.setdefault((provider_key, model_name), {
+            "name": model_name, "provider": provider_key,
             "tokens": 0, "cost": 0.0, "share": 0.0,
         })
-        model["tokens"] += rec.tokens
+        model["tokens"] += tokens
         model["cost"] += cost
-        buckets = daily.setdefault(rec.provider, [0] * days)
-        day = (datetime.fromtimestamp(rec.ts_ms / 1000).date() - start).days
-        if 0 <= day < days:
-            buckets[day] += rec.tokens
+        buckets = daily.setdefault(provider_key, [0] * days)
+        buckets[(date.fromisoformat(day) - start).days] += tokens
     for provider in providers.values():
         provider["sessions"] = len(provider["sessions"])
         provider["share"] = provider["tokens"] / total * 100 if total else 0.0
@@ -91,11 +151,11 @@ def summarize(records: list[Record], rates: dict, start: date, days: int) -> dic
         model["share"] = model["tokens"] / total * 100 if total else 0.0
     return {
         "start": start, "end": start + timedelta(days=days - 1),
-        "tokens": total, "sessions": len({rec.session for rec in records}),
+        "tokens": total, "sessions": len({row[3] for row in rows}),
         "cost": sum(provider["cost"] for provider in providers.values()),
-        "cached": sum(rec.cache_read for rec in records),
-        "uncached": sum(rec.input + rec.cache_write for rec in records),
-        "output": sum(rec.output for rec in records),
+        "cached": sum(row[5] for row in rows),
+        "uncached": sum(row[4] + row[6] for row in rows),
+        "output": sum(row[7] for row in rows),
         "providers": sorted(providers.values(), key=lambda p: p["tokens"], reverse=True),
         "models": sorted(models.values(), key=lambda m: m["tokens"], reverse=True),
         "daily": daily,
@@ -114,7 +174,7 @@ def fmt_cost(x: float) -> str:
     return f"${x:,.2f}"
 
 
-def render_svg(s: dict, theme: str) -> str:
+def render_svg(s: dict, theme: str, updated: date) -> str:
     palettes = {
         "light": ("#ffffff", "#d0d7de", "#1f2328", "#59636e", "#eaeef2"),
         "dark": ("#0d1117", "#30363d", "#e6edf3", "#9198a1", "#21262d"),
@@ -220,32 +280,78 @@ def render_svg(s: dict, theme: str) -> str:
         text(816, y, fmt_tokens(model["tokens"]), 13, anchor="end")
         separator(y + 9)
     text(24, height - 15,
-         f'From local Claude Code + Codex logs via T3 Code · updated {date.today():%Y-%m-%d}',
+         f'From local Claude Code + Codex logs via T3 Code · updated {updated:%Y-%m-%d}',
          10, muted)
     parts.extend(["</g>", "</svg>"])
     return "\n".join(parts) + "\n"
 
 
 def main() -> None:
+    repo = Path(__file__).resolve().parent.parent
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--days", type=int, default=30)
-    parser.add_argument("--t3-dir", type=Path, default=Path.home() / ".t3" / "userdata")
-    parser.add_argument("--out", type=Path, default=Path("assets"))
+    subparsers = parser.add_subparsers(dest="command", required=True)
+    exporter = subparsers.add_parser("export")
+    exporter.add_argument("--days", type=int, default=45)
+    exporter.add_argument("--claude-root", type=Path, default=Path.home() / ".claude" / "projects")
+    exporter.add_argument("--codex-root", type=Path, default=Path.home() / ".codex" / "sessions")
+    exporter.add_argument("--rates", type=Path, default=Path.home() / ".t3" / "userdata" / "usage-model-rates.json")
+    exporter.add_argument("--data", type=Path, default=Path("data/usage.json"))
+    renderer = subparsers.add_parser("render")
+    renderer.add_argument("--days", type=int, default=30)
+    renderer.add_argument("--tz")
+    renderer.add_argument("--data", type=Path, default=Path("data/usage.json"))
+    renderer.add_argument("--out", type=Path, default=Path("assets"))
     args = parser.parse_args()
-    today = date.today()
+    if args.days < 1:
+        parser.error("--days must be positive")
+
+    def resolve(path: Path) -> Path:
+        path = path.expanduser()
+        return path if path.is_absolute() else repo / path
+
+    data_path = resolve(args.data)
+    if args.command == "export":
+        today = date.today()
+        start = today - timedelta(days=args.days - 1)
+        since_ms = int(datetime.combine(start, time.min).timestamp() * 1000)
+        records = parse_claude(resolve(args.claude_root), since_ms) + parse_codex(resolve(args.codex_root), since_ms)
+        rates_path = resolve(args.rates)
+        rates = load_rates(rates_path) if rates_path.exists() else {}
+        aggregated: dict[tuple[str, str, str, str], list] = {}
+        for rec in records:
+            day = datetime.fromtimestamp(rec.ts_ms / 1000).date().isoformat()
+            session_hash = hashlib.sha256(rec.session.encode("utf-8")).hexdigest()[:12]
+            key = (day, rec.provider, rec.model, session_hash)
+            values = aggregated.setdefault(key, [0, 0, 0, 0, 0.0])
+            for index, value in enumerate(rec[4:]):
+                values[index] += value
+            values[4] += record_cost(rec, rates)
+        rows = []
+        if data_path.exists():
+            with data_path.open(encoding="utf-8") as stream:
+                rows = [row for row in json.load(stream)["rows"] if row[0] < start.isoformat()]
+        rows.extend([*key, *values[:4], round(values[4], 4)] for key, values in aggregated.items())
+        cutoff = (today - timedelta(days=60)).isoformat()
+        rows = sorted(row for row in rows if row[0] >= cutoff)
+        data = {"version": 1, "timezone": "America/New_York",
+                "updated": datetime.now().astimezone().isoformat(), "rows": rows}
+        data_path.parent.mkdir(parents=True, exist_ok=True)
+        with data_path.open("w", encoding="utf-8", newline="\n") as stream:
+            stream.write(json.dumps(data, separators=(",", ":")) + "\n")
+        print(f'{len(records):,} records, {len(rows):,} rows -> {args.data.as_posix()}')
+        return
+
+    with data_path.open(encoding="utf-8") as stream:
+        data = json.load(stream)
+    today = datetime.now(ZoneInfo(args.tz or data["timezone"])).date()
     start = today - timedelta(days=args.days - 1)
-    since_ms = int(datetime.combine(start, time.min).timestamp() * 1000)
-    until_ms = int(datetime.combine(today + timedelta(days=1), time.min).timestamp() * 1000)
-    records = load_records(args.t3_dir.expanduser() / "usage-scan-cache.json", since_ms, until_ms)
-    rates = load_rates(args.t3_dir.expanduser() / "usage-model-rates.json")
-    summary = summarize(records, rates, start, args.days)
-    out = args.out.expanduser()
-    if not out.is_absolute():
-        out = Path(__file__).resolve().parent.parent / out
+    summary = summarize(data["rows"], start, args.days)
+    updated = datetime.fromisoformat(data["updated"]).date()
+    out = resolve(args.out)
     out.mkdir(parents=True, exist_ok=True)
     for theme in ("light", "dark"):
         with (out / f"usage-{theme}.svg").open("w", encoding="utf-8", newline="\n") as stream:
-            stream.write(render_svg(summary, theme))
+            stream.write(render_svg(summary, theme, updated))
     print(f'{fmt_tokens(summary["tokens"])} tokens, {summary["sessions"]:,} sessions, '
           f'{fmt_cost(summary["cost"])} -> {args.out.as_posix().rstrip("/")}/')
 
