@@ -1,26 +1,29 @@
-# Victor Ivanov
+# hi, i'm victor
 
-Backend-leaning full-stack engineer in Sterling, VA (DMV). DoD Secret clearance eligibility, DCSA-adjudicated 2026. Open to on-site and hybrid roles across the DC / Maryland / Virginia area.
+i build stuff. sometimes it works. [victorivanov.engineer](https://victorivanov.engineer)
 
-**Now:** Senior Backend Engineer at Paradigm Testing, leading architecture and production delivery for multi-tenant certification SaaS (Java 21, Spring Boot 3, React, PostgreSQL, AWS).
+## things i made
 
-**Also:** M.S. Computer Science, Georgia Tech (Systems & Architecture, expected Dec 2027). B.S. Computer Science, UMBC.
+| project | what it does |
+|---|---|
+| [linky](https://github.com/LLRHook/linky) | Discord bot for social link previews, tweet/Instagram translation and playable media. Live at [linkybot.dev](https://linkybot.dev) |
+| [fix-youtube](https://github.com/LLRHook/fix-youtube) | Browser extension that kills Shorts and recommendations, stops autoplay, and opens Subscriptions by default |
+| [citybase](https://github.com/LLRHook/citybase) | Isometric IDE that turns a repo into a hex-tile city and sends coding agents out on Jira quests |
+| [mailit](https://github.com/LLRHook/mailit) | Self-hosted email platform: SMTP in and out, DKIM/SPF, bounces, webhooks. Go + Next.js |
+| [appshot](https://github.com/LLRHook/appshot) | Local-first App Store screenshot generator with AI headlines. SvelteKit |
+| [tcg-order-printer](https://github.com/LLRHook/tcg-order-printer) | Chrome extension: one click prints the TCGplayer packing slip and a 4x6 address label |
+| [what-made-em-so-mad](https://github.com/LLRHook/what-made-em-so-mad) | Finds and clips the reaction moments in streamer VODs |
+| [youtube-fact-checker](https://github.com/LLRHook/youtube-fact-checker) | Pulls claims out of YouTube transcripts and checks them against the web |
+| [applybase](https://github.com/LLRHook/applybase) | LaTeX resumes plus a self-hosted job application tracker |
+| [claude-statusline](https://github.com/LLRHook/claude-statusline) | Claude Code status line: model, context, branch, token throughput |
+| [usage-widget](https://github.com/LLRHook/usage-widget) | Windows tray monitor for Claude Code and Codex usage |
+| [retrocast](https://github.com/LLRHook/retrocast) | Discord-style real-time chat in Go + WebSockets |
 
-## What I work with
+## tokens burned
 
-- **Backend:** Java 21, Spring Boot 3, Spring Security, JPA/Hibernate, Go, Python, FastAPI, REST, WebSockets/STOMP
-- **Frontend:** TypeScript, React, Next.js, Vite, Playwright, Vitest
-- **Data & cloud:** PostgreSQL, MariaDB, Redis/Valkey, AWS (EC2, S3, RDS), Docker, Kubernetes/Helm
-- **Delivery:** GitHub Actions, Bitbucket Pipelines, OAuth2/JWT, JUnit/Mockito, Testcontainers, Pytest
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/usage-dark.svg">
+  <img alt="AI coding token usage, last 30 days" src="assets/usage-light.svg">
+</picture>
 
-## Selected projects
-
-- [mailit](https://github.com/LLRHook/mailit) - self-hosted email platform in Go: REST APIs, async workers, inbound SMTP, direct MX delivery, DKIM, signed webhooks
-- [citybase](https://github.com/LLRHook/citybase) - Electron IDE that maps a repository into an isometric city and dispatches Claude/Codex through typed IPC
-- [youtube-fact-checker](https://github.com/LLRHook/youtube-fact-checker) - FastAPI + Claude + Brave Search pipeline that extracts and scores transcript claims with cited verdicts
-- [fix-youtube](https://github.com/LLRHook/fix-youtube) - zero-dependency Manifest V3 extension: Shorts redirects, feed filters, focus timers
-- [what-made-em-so-mad](https://github.com/LLRHook/what-made-em-so-mad) - local-first VOD analysis and clip export with OpenCV and SQLite workers
-
-## Contact
-
-[victorivanov.engineer](https://victorivanov.engineer) · [LinkedIn](https://www.linkedin.com/in/victorivanovofficial/) · victor.n.ivanov@gmail.com
+<sub>Refresh: `python scripts/usage_card.py`</sub>
