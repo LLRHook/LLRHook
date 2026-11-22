@@ -73,6 +73,6 @@
 <text x="680" y="520" font-size="13" fill="#1f2328" font-weight="400" text-anchor="end">&lt;0.1%</text>
 <text x="816" y="520" font-size="13" fill="#1f2328" font-weight="400" text-anchor="end">540K</text>
 <path d="M24 529H816" stroke="#eaeef2"/>
-<text x="24" y="543" font-size="10" fill="#59636e" font-weight="400" text-anchor="start">From local Claude Code + Codex logs via T3 Code · updated 2026-11-20</text>
+<text x="24" y="543" font-size="10" fill="#59636e" font-weight="400" text-anchor="start">From local Claude Code + Codex logs via T3 Code · updated 2026-11-21</text>
 </g>
 </svg>
